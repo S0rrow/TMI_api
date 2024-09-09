@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 from sqlalchemy import create_engine, text
-from views.utils import Logger
+from utils import Logger
 from datetime import datetime
 
 parent_path = os.path.dirname(os.path.abspath(__file__))

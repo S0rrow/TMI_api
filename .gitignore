@@ -1,2 +1,8 @@
 # credentials
 *.json
+
+# virtual environments
+venv/
+
+# logs
+logs/
