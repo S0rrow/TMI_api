@@ -4,6 +4,7 @@ sudo apt-get update && sudo apt-get upgrade -y
 sudo apt-get install -y python3-pip python3-venv uvicorn
 
 cd /home/ubuntu/TMI_api
+git pull origin main
 
 # virtual environemnt variable
 VENV_DIR="venv"
