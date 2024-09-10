@@ -9,7 +9,7 @@ cd /home/ubuntu/TMI_api
 VENV_DIR="venv"
 
 # check if venv already exists
-if [ -d "$VENV_DIR"]; then
+if [ -d "$VENV_DIR" ]; then
   echo "Virtual Environment already exists. Updating dependencies..."
   source $VENV_DIR/bin/activate
 else
@@ -27,6 +27,6 @@ if lsof -i :8000; then
   pkill -f 'uvicorn app:app'
 fi
 
-nohup uvicorn -w 4 -b 0.0.0.0:8000 app:app --reload > fastapi.log 2>&1 &
+nohup uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4 > fastapi.log 2>&1 &
 
 echo "api deployment complete."
