@@ -1,7 +1,7 @@
 #!/bin/bash
 
 sudo apt-get update && sudo apt-get upgrade -y
-sudo apt-get install -y python3-pip python3-venv
+sudo apt-get install -y python3-pip python3-venv uvicorn
 
 cd /home/ubuntu/TMI_api
 
