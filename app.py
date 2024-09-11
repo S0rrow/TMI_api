@@ -148,11 +148,10 @@ def retrieve_unique_values(input:UniqueValuesCall):
     column = input.column
     try:
         query = f"SELECT {column} FROM {table} WHERE {column} != '[]';"
-        result = query_to_dataframe(database=database, query=query)
+        result_df = query_to_dataframe(database=database, query=query)
         unique_elem_set = set()
-        for row in result:
-            column_str = row[0]
-            col_elem_list = ast.literal_eval(column_str.replace("'", "\""))  # 변경된 부분
+        for row in result_df[column]:
+            col_elem_list = ast.literal_eval(row)
             unique_elem_set.update(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
         unique_elem_list = list(unique_elem_set)
         return {"unique_values":unique_elem_list}
