@@ -152,7 +152,7 @@ def retrieve_unique_values(input:UniqueValuesCall):
         unique_elem_set = set()
         for row in result:
             column_str = row[0]
-            col_elem_list = ast.literal_eval(column_str)
+            col_elem_list = ast.literal_eval(column_str.replace("'", "\""))  # 변경된 부분
             unique_elem_set.update(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
         unique_elem_list = list(unique_elem_set)
         return {"unique_values":unique_elem_list}
