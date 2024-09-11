@@ -23,9 +23,13 @@ fi
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# kill running api
-if lsof -i :8000; then
-  pkill -f 'uvicorn app:app'
+# Check if fastapi is running on port 8000 and stop it
+PID=$(lsof -t -i:8000)
+if [ -n "$PID" ]; then
+  echo "Stopping fastapi process with PID: $PID"
+  kill -9 $PID
+else
+  echo "No fastapi process is running on port 8501"
 fi
 
 nohup uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4 > fastapi.log 2>&1 &
