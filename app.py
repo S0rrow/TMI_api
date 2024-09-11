@@ -5,11 +5,14 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from utils import Logger
 from datetime import datetime
+import ast
 
 parent_path = os.path.dirname(os.path.abspath(__file__))
 config_path = f"{parent_path}/config.json"
 app = FastAPI()
 logger = Logger()
+
+### input models
 class QueryCall(BaseModel):
     database: str
     query : str
@@ -26,6 +29,12 @@ class SearchHistory(BaseModel):
     user_id: str
     is_logged_in: bool
 
+class UniqueValuesCall(BaseModel):
+    database:str
+    table:str
+    column:str
+
+### API calls
 @app.delete("/history")
 def clear_search_history(input:SessionCall):
     method_name = __name__ + ".clear_search_history"
@@ -112,36 +121,6 @@ async def get_search_history(session_id:str, user_id:str, is_logged_in:bool)->li
         logger.log(f"Exception occurred while retrieving search history: {e}", flag=1, name=__name__)
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-def get_test_dataframe()->pd.DataFrame:
-    data = {
-        'job_title': ['Backend Software Engineer', 'Frontend Developer', 'Data Scientist', 'Full Stack Developer', 'DevOps Engineer', 'Mobile App Developer', 'UI/UX Designer', 'System Administrator', 'Cloud Architect', 'Security Specialist', 'Machine Learning Engineer', 'QA Engineer'],
-        'company_name': ['Quotabook', 'TechCorp', 'DataScience Inc.', 'Naver', 'Kakao', 'Line', 'Coupang', 'Baemin', 'Toss', 'Karrot', 'Wadiz', 'Zigbang'],
-        'country': ['South Korea', 'USA', 'UK', 'South Korea', 'South Korea', 'Japan', 'South Korea', 'South Korea', 'South Korea', 'South Korea', 'South Korea', 'South Korea'],
-        'salary': [None, '$120,000', '$95,000', '$110,000', '$130,000', '10,000,000 JPY', '$90,000', '$100,000', '$150,000', '$85,000', '$140,000', '$95,000'],
-        'remote': [False, True, True, False, True, False, True, False, True, True, False, True],
-        'job_category': ['Backend Engineer', 'Frontend Engineer', 'Data Science', 'Full Stack Development', 'DevOps', 'Mobile Development', 'Design', 'System Administration', 'Cloud Computing', 'Information Security', 'Artificial Intelligence', 'Quality Assurance'],
-        'stacks': [
-            "['Python', 'Django', 'Docker', 'AWS EKS', 'GitHub Actions', 'Node.js', 'TypeScript', 'ReactJS']",
-            "['JavaScript', 'ReactJS', 'Redux', 'CSS', 'HTML', 'Node.js']",
-            "['Python', 'Pandas', 'NumPy', 'TensorFlow', 'Keras', 'Docker']",
-            "['JavaScript', 'Python', 'React', 'Django', 'PostgreSQL', 'Redis']",
-            "['Kubernetes', 'Docker', 'Jenkins', 'Terraform', 'AWS', 'Prometheus']",
-            "['Swift', 'Kotlin', 'React Native', 'Firebase', 'GraphQL']",
-            "['Figma', 'Sketch', 'Adobe XD', 'InVision', 'Zeplin']",
-            "['Linux', 'Bash', 'Ansible', 'Nagios', 'VMware']",
-            "['AWS', 'Azure', 'GCP', 'Terraform', 'Kubernetes', 'Docker']",
-            "['Wireshark', 'Metasploit', 'Nmap', 'Burp Suite', 'Python']",
-            "['Python', 'TensorFlow', 'PyTorch', 'Scikit-learn', 'Keras']",
-            "['Selenium', 'JUnit', 'TestNG', 'Postman', 'Jenkins']"
-        ],
-        'required_career': [True, False, True, True, True, False, True, True, True, True, True, False],
-        'start_date': ['2023-07-01', '2023-07-02', '2023-07-03', '2023-07-04', '2023-07-05', '2023-07-06', '2023-07-07', '2023-07-08', '2023-07-09', '2023-07-10', '2023-07-11', '2023-07-12'],
-        'end_date': ['2023-08-01', '2023-08-02', '2023-08-03', '2023-08-04', '2023-08-05', '2023-08-06', '2023-08-07', '2023-08-08', '2023-08-09', '2023-08-10', '2023-08-11', '2023-08-12'],
-        'domain': ['Tech', 'Tech', 'Data Science', 'Tech', 'Tech', 'Mobile', 'Design', 'Infrastructure', 'Cloud', 'Security', 'AI', 'QA'],
-        'URL': ['http://example.com/job1', 'http://example.com/job2', 'http://example.com/job3', 'http://example.com/job4', 'http://example.com/job5', 'http://example.com/job6', 'http://example.com/job7', 'http://example.com/job8', 'http://example.com/job9', 'http://example.com/job10', 'http://example.com/job11', 'http://example.com/job12']
-    }
-    return data
-
 @app.post("/test")
 def query_test(input:QueryCall):
     try:
@@ -161,6 +140,27 @@ def query(input:QueryCall):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Exception occurred while querying from database: {e}")
 
+@app.post("/unique_values")
+def retrieve_unique_values(input:UniqueValuesCall):
+    method_name = __name__ + ".retrieve_unique_values"
+    database = input.database
+    table = input.table
+    column = input.column
+    try:
+        query = f"SELECT {column} FROM {table} WHERE {column} != '[]';"
+        result = query_to_dataframe(database=database, query=query)
+        unique_elem_set = set()
+        for row in result:
+            column_str = row[0]
+            col_elem_list = ast.literal_eval(column_str)
+            unique_elem_set.update(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
+        unique_elem_list = list(unique_elem_set)
+        return {"unique_values":unique_elem_list}
+    except Exception as e:
+        logger.log(f"Exception occurred while retrieving unique values from table: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving unique values from table:{e}")
+
+### methods
 def load_config(config_path:str='config.json')->dict:
     """return configuration informations from config.json"""
     with open(config_path, 'r') as f:
@@ -230,3 +230,33 @@ def query_to_dataframe(database:str, query:str, config_path:str='config.json')->
     except Exception as e:
         logger.log(f"Exception occurred while querying: {e}", flag=1, name=method_name)
         raise e
+    
+def get_test_dataframe()->pd.DataFrame:
+    data = {
+        'job_title': ['Backend Software Engineer', 'Frontend Developer', 'Data Scientist', 'Full Stack Developer', 'DevOps Engineer', 'Mobile App Developer', 'UI/UX Designer', 'System Administrator', 'Cloud Architect', 'Security Specialist', 'Machine Learning Engineer', 'QA Engineer'],
+        'company_name': ['Quotabook', 'TechCorp', 'DataScience Inc.', 'Naver', 'Kakao', 'Line', 'Coupang', 'Baemin', 'Toss', 'Karrot', 'Wadiz', 'Zigbang'],
+        'country': ['South Korea', 'USA', 'UK', 'South Korea', 'South Korea', 'Japan', 'South Korea', 'South Korea', 'South Korea', 'South Korea', 'South Korea', 'South Korea'],
+        'salary': [None, '$120,000', '$95,000', '$110,000', '$130,000', '10,000,000 JPY', '$90,000', '$100,000', '$150,000', '$85,000', '$140,000', '$95,000'],
+        'remote': [False, True, True, False, True, False, True, False, True, True, False, True],
+        'job_category': ['Backend Engineer', 'Frontend Engineer', 'Data Science', 'Full Stack Development', 'DevOps', 'Mobile Development', 'Design', 'System Administration', 'Cloud Computing', 'Information Security', 'Artificial Intelligence', 'Quality Assurance'],
+        'stacks': [
+            "['Python', 'Django', 'Docker', 'AWS EKS', 'GitHub Actions', 'Node.js', 'TypeScript', 'ReactJS']",
+            "['JavaScript', 'ReactJS', 'Redux', 'CSS', 'HTML', 'Node.js']",
+            "['Python', 'Pandas', 'NumPy', 'TensorFlow', 'Keras', 'Docker']",
+            "['JavaScript', 'Python', 'React', 'Django', 'PostgreSQL', 'Redis']",
+            "['Kubernetes', 'Docker', 'Jenkins', 'Terraform', 'AWS', 'Prometheus']",
+            "['Swift', 'Kotlin', 'React Native', 'Firebase', 'GraphQL']",
+            "['Figma', 'Sketch', 'Adobe XD', 'InVision', 'Zeplin']",
+            "['Linux', 'Bash', 'Ansible', 'Nagios', 'VMware']",
+            "['AWS', 'Azure', 'GCP', 'Terraform', 'Kubernetes', 'Docker']",
+            "['Wireshark', 'Metasploit', 'Nmap', 'Burp Suite', 'Python']",
+            "['Python', 'TensorFlow', 'PyTorch', 'Scikit-learn', 'Keras']",
+            "['Selenium', 'JUnit', 'TestNG', 'Postman', 'Jenkins']"
+        ],
+        'required_career': [True, False, True, True, True, False, True, True, True, True, True, False],
+        'start_date': ['2023-07-01', '2023-07-02', '2023-07-03', '2023-07-04', '2023-07-05', '2023-07-06', '2023-07-07', '2023-07-08', '2023-07-09', '2023-07-10', '2023-07-11', '2023-07-12'],
+        'end_date': ['2023-08-01', '2023-08-02', '2023-08-03', '2023-08-04', '2023-08-05', '2023-08-06', '2023-08-07', '2023-08-08', '2023-08-09', '2023-08-10', '2023-08-11', '2023-08-12'],
+        'domain': ['Tech', 'Tech', 'Data Science', 'Tech', 'Tech', 'Mobile', 'Design', 'Infrastructure', 'Cloud', 'Security', 'AI', 'QA'],
+        'URL': ['http://example.com/job1', 'http://example.com/job2', 'http://example.com/job3', 'http://example.com/job4', 'http://example.com/job5', 'http://example.com/job6', 'http://example.com/job7', 'http://example.com/job8', 'http://example.com/job9', 'http://example.com/job10', 'http://example.com/job11', 'http://example.com/job12']
+    }
+    return data
