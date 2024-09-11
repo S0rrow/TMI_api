@@ -2,7 +2,7 @@ import os, json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, MetaData, Table
 from utils import Logger
 from datetime import datetime
 import ast
@@ -33,6 +33,10 @@ class UniqueValuesCall(BaseModel):
     database:str
     table:str
     column:str
+
+class MetaDataCall(BaseModel):
+    database:str
+    table:str
 
 ### API calls
 @app.delete("/history")
@@ -92,7 +96,7 @@ async def get_search_history(session_id:str, user_id:str, is_logged_in:bool)->li
     try:
         # Check if session_id exists in db
         if is_logged_in:
-            validate_query = f"SELECT COUNT(*) as count FROM search_history WHERE user_id = '{user_id}'"
+            validate_query = f"SELECT COUNT(*) as count FROM search_history WHERE user_id = '{user_id}' AND is_logged_in = TRUE"
         else:
             validate_query = f"SELECT COUNT(*) as count FROM search_history WHERE session_id = '{session_id}'"
         result = query_to_dataframe(database="streamlit", query=validate_query)
@@ -158,6 +162,21 @@ def retrieve_unique_values(input:UniqueValuesCall):
     except Exception as e:
         logger.log(f"Exception occurred while retrieving unique values from table: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving unique values from table:{e}")
+
+@app.post("/columns")
+def get_columns(input:MetaDataCall):
+    method_name = __name__ + ".get_columns"
+    database = input.database
+    table_name = input.table
+    try:
+        engine = create_db_engine(database, config=load_config())
+        metadata = MetaData()
+        table = Table(table_name, metadata, autoload_with=engine)
+        column_names = [col.name for col in table.columns]
+        return {"column_names":column_names}
+    except Exception as e:
+        logger.log(f"",flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving metadata of table:{e}")
 
 ### methods
 def load_config(config_path:str='config.json')->dict:
