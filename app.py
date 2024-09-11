@@ -169,7 +169,7 @@ def get_columns(input:MetaDataCall):
     database = input.database
     table_name = input.table
     try:
-        engine = create_db_engine(database, config=load_config())
+        engine = create_db_engine(database)
         metadata = MetaData()
         table = Table(table_name, metadata, autoload_with=engine)
         column_names = [col.name for col in table.columns]
@@ -178,15 +178,36 @@ def get_columns(input:MetaDataCall):
         logger.log(f"",flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving metadata of table:{e}")
 
+@app.get("/row_count")
+def get_table_row_count(database: str, table: str):
+    method_name = __name__ + ".get_table_row_count"
+    try:
+        # SQLAlchemy 엔진 설정
+        engine = create_db_engine(database)
+
+        # 쿼리 작성
+        query = f"SELECT COUNT(*) FROM {table}"
+
+        # 연결하고 쿼리 실행
+        with engine.connect() as connection:
+            result = connection.execute(text(query))
+            row_count = result.scalar()  # 첫 번째 결과 값을 가져옴
+            return {"row_count": row_count}
+    except Exception as e:
+        logger.log(f"Exception occurred while getting table row count: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Error retrieving row count: {e}")
+
 ### methods
 def load_config(config_path:str='config.json')->dict:
     """return configuration informations from config.json"""
     with open(config_path, 'r') as f:
         return json.load(f)
 
-def create_db_engine(database:str, config):
+def create_db_engine(database:str, config=None):
     """generate db engine through configuration file."""
     method_name = __name__ + ".create_db_engine"
+    if config is None:
+        config = load_config()
     try:
         user = config.get("USER")
         password = config.get("PASSWORD")
@@ -198,7 +219,7 @@ def create_db_engine(database:str, config):
         logger.log(f"Exception occurred while creating db engine: {e}", flag=1, name=method_name)
         raise e
     
-def execute_query(database:str, query:str, params:dict=None, config_path:str='config.json')->bool:
+def execute_query(database:str, query:str, params:dict=None)->bool:
     """
     Execute SQL query and return True if successful, False otherwise.
     - database: database name to connect
@@ -208,8 +229,7 @@ def execute_query(database:str, query:str, params:dict=None, config_path:str='co
     """
     method_name = __name__ + ".execute_query"
     try:
-        config = load_config(config_path)
-        engine = create_db_engine(database, config)
+        engine = create_db_engine(database)
         
         with engine.connect() as connection:
             try:
@@ -228,7 +248,7 @@ def execute_query(database:str, query:str, params:dict=None, config_path:str='co
         return Exception(e)
     
 
-def query_to_dataframe(database:str, query:str, config_path:str='config.json')->pd.DataFrame:
+def query_to_dataframe(database:str, query:str)->pd.DataFrame:
     """
         execute sql query and return results in dataframe.
         - database: database name to connect
@@ -237,8 +257,7 @@ def query_to_dataframe(database:str, query:str, config_path:str='config.json')->
     """
     method_name = __name__ + ".query_to_dataframe"
     try:
-        config = load_config(config_path)
-        engine = create_db_engine(database, config)
+        engine = create_db_engine(database)
         with engine.connect() as connection:
             try:
                 df = pd.read_sql(query, connection)
