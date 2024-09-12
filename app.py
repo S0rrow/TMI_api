@@ -152,23 +152,28 @@ def retrieve_unique_values(input:UniqueValuesCall):
     table = input.table
     column = input.column
     is_stacked = input.is_stacked
+    seperator = -1
     try:
         if is_stacked:
+            seperator = 0
             query = f"SELECT {column} FROM {table} WHERE {column} != '[]';"
             result_df = query_to_dataframe(database=database, query=query)
             all_elems = []
+            seperator = 1
             for row in result_df[column]:
                 col_elem_list = ast.literal_eval(row)
-                all_elems.extend(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
+                all_elems.extend(col_elem_list)
             unique_stacked_elem_list = list(set(all_elems))
             return {"unique_values":unique_stacked_elem_list}
         else:
+            seperator = 2
             query = f"SELECT DISTINCT {column} FROM {table};"
             result_df = query_to_dataframe(database, query)
+            seperator = 3
             unique_elem_list = result_df[column].unique().tolist()
             return {"unique_values":unique_elem_list}
     except Exception as e:
-        logger.log(f"Exception occurred while retrieving unique values from table: {e}", flag=1, name=method_name)
+        logger.log(f"Exception occurred while retrieving unique values from table on seperator #{seperator}: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving unique values from table:{e}")
 
 @app.post("/columns")
