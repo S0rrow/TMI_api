@@ -197,6 +197,18 @@ def get_table_row_count(database: str, table: str):
         logger.log(f"Exception occurred while getting table row count: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Error retrieving row count: {e}")
 
+@app.get("/stacked_columns")
+def get_stacked_columns(database:str, table:str):
+    method_name = __name__ + ".get_stacked_columns"
+    try:
+        query = f"SELECT COUNT(*) FROM {table} LIMIT 1;"
+        result_df = query_to_dataframe(database, query)
+        stacked_columns = [col for col in result_df.columns if str(result_df[col].iloc[0]).startswith('[')]
+        return {"stacked_columns":stacked_columns}
+    except Exception as e:
+        logger.log(f"Exception occurred while getting stacked columns as list: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while getting stacked columns as list: {e}")
+
 ### methods
 def load_config(config_path:str='config.json')->dict:
     """return configuration informations from config.json"""
