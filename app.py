@@ -294,6 +294,7 @@ def query_to_dataframe(database:str, query:str)->pd.DataFrame:
                 df = pd.read_sql(query, connection)
             except Exception as e:
                 logger.log(f"Exception occurred while connecting: {e}", flag=1, name=method_name)
+                raise e
         return df
     except Exception as e:
         logger.log(f"Exception occurred while querying: {e}", flag=1, name=method_name)
