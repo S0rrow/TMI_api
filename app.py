@@ -164,7 +164,7 @@ def retrieve_unique_values(input:UniqueValuesCall):
         else:
             query = f"SELECT DISTINCT {column} FROM {table};"
             result_df = query_to_dataframe(database, query)
-            unique_elem_list = result_df[column].unique().to_list()
+            unique_elem_list = result_df[column].unique().tolist()
         return {"unique_values":unique_elem_list}
     except Exception as e:
         logger.log(f"Exception occurred while retrieving unique values from table: {e}", flag=1, name=method_name)
