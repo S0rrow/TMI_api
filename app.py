@@ -161,7 +161,11 @@ def retrieve_unique_values(input:UniqueValuesCall):
             all_elems = []
             seperator = 1
             for row in result_df[column]:
-                col_elem_list = ast.literal_eval(row)
+                try:
+                    col_elem_list = ast.literal_eval(row)  # 예외 처리 추가
+                except (SyntaxError, ValueError) as e:
+                    logger.log(f"Error parsing row: {row}, error: {e}", flag=1, name=method_name)
+                    continue  # 오류가 발생한 경우 건너뜀
                 all_elems.extend(col_elem_list)
             unique_stacked_elem_list = list(set(all_elems))
             return {"unique_values":unique_stacked_elem_list}
