@@ -160,12 +160,13 @@ def retrieve_unique_values(input:UniqueValuesCall):
             for row in result_df[column]:
                 col_elem_list = ast.literal_eval(row)
                 all_elems.extend(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
-            unique_elem_list = list(set(all_elems))
+            unique_stacked_elem_list = list(set(all_elems))
+            return {"unique_values":unique_stacked_elem_list}
         else:
             query = f"SELECT DISTINCT {column} FROM {table};"
             result_df = query_to_dataframe(database, query)
             unique_elem_list = result_df[column].unique().tolist()
-        return {"unique_values":unique_elem_list}
+            return {"unique_values":unique_elem_list}
     except Exception as e:
         logger.log(f"Exception occurred while retrieving unique values from table: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving unique values from table:{e}")
