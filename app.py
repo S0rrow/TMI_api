@@ -211,7 +211,9 @@ def get_stacked_columns(database:str, table:str):
     try:
         query = f"SELECT COUNT(*) FROM {table} LIMIT 1;"
         result_df = query_to_dataframe(database, query)
-        stacked_columns = [col for col in result_df.columns if str(result_df[col].iloc[0]).startswith('[')]
+        stacked_columns = [col for col in result_df.columns if isinstance(result_df[col].iloc[0], str) and result_df[col].iloc[0].startswith('[')]
+        
+        # stacked_columns = [col for col in result_df.columns if str(result_df[col].iloc[0]).startswith('[')]
         return {"stacked_columns":stacked_columns}
     except Exception as e:
         logger.log(f"Exception occurred while getting stacked columns as list: {e}", flag=1, name=method_name)
