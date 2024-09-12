@@ -33,6 +33,7 @@ class UniqueValuesCall(BaseModel):
     database:str
     table:str
     column:str
+    is_stacked:bool
 
 class MetaDataCall(BaseModel):
     database:str
@@ -150,14 +151,20 @@ def retrieve_unique_values(input:UniqueValuesCall):
     database = input.database
     table = input.table
     column = input.column
+    is_stacked = input.is_stacked
     try:
-        query = f"SELECT {column} FROM {table} WHERE {column} != '[]';"
-        result_df = query_to_dataframe(database=database, query=query)
-        all_elems = []
-        for row in result_df[column]:
-            col_elem_list = ast.literal_eval(row)
-            all_elems.extend(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
-        unique_elem_list = list(set(all_elems))
+        if is_stacked:
+            query = f"SELECT {column} FROM {table} WHERE {column} != '[]';"
+            result_df = query_to_dataframe(database=database, query=query)
+            all_elems = []
+            for row in result_df[column]:
+                col_elem_list = ast.literal_eval(row)
+                all_elems.extend(col_elem_list)  # 집합에 각 스택을 추가하여 중복 제거
+            unique_elem_list = list(set(all_elems))
+        else:
+            query = f"SELECT DISTINCT {column} FROM {table};"
+            result_df = query_to_dataframe(database, query)
+            unique_elem_list = result_df[column].unique().to_list()
         return {"unique_values":unique_elem_list}
     except Exception as e:
         logger.log(f"Exception occurred while retrieving unique values from table: {e}", flag=1, name=method_name)
