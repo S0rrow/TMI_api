@@ -195,16 +195,13 @@ def get_columns(input:MetaDataCall):
         logger.log(f"",flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving metadata of table:{e}")
 
-@app.get("/row_count")
-def get_table_row_count(database: str, table: str):
+@app.post("/row_count")
+def get_table_row_count(input:QueryCall):
     method_name = __name__ + ".get_table_row_count"
     try:
-        # SQLAlchemy 엔진 설정
+        database = input.database
+        query = input.query
         engine = create_db_engine(database)
-
-        # 쿼리 작성
-        query = f"SELECT COUNT(*) FROM {table}"
-
         # 연결하고 쿼리 실행
         with engine.connect() as connection:
             result = connection.execute(text(query))
