@@ -2,10 +2,12 @@ import os, json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
-from sqlalchemy import create_engine, text, MetaData, Table
+from sqlalchemy import create_engine, or_, text, MetaData, Table
+from sqlalchemy.orm import sessionmaker
 from utils import Logger
 from datetime import datetime
 import ast
+from model import JobInformation, DevStack, JobStack, Category, IncludeCategory, Industry, IndustryRelation
 
 parent_path = os.path.dirname(os.path.abspath(__file__))
 config_path = f"{parent_path}/config.json"
@@ -43,6 +45,7 @@ class MetaDataCall(BaseModel):
 @app.delete("/history")
 def clear_search_history(input:SessionCall):
     method_name = __name__ + ".clear_search_history"
+    logger.log(f"api called", flag=0, name=method_name)
     # connect to db, and clear search history of session_id
     logger.log(f"clearing search history of session_id: {input.session_id}", name=__name__)
     session_id = input.session_id
@@ -65,6 +68,7 @@ def clear_search_history(input:SessionCall):
 @app.post("/history")
 def save_search_history(input: SearchHistory):
     method_name = __name__ + ".save_search_history"
+    logger.log(f"api called", flag=0, name=method_name)
     try:
         # Convert the search_history dict to a JSON string
         search_history_json = json.dumps(input.search_history)
@@ -94,6 +98,7 @@ def save_search_history(input: SearchHistory):
 @app.get("/history")
 async def get_search_history(session_id:str, user_id:str, is_logged_in:bool)->list:
     method_name = __name__ + ".get_search_history"
+    logger.log(f"api called", flag=0, name=method_name)
     try:
         # Check if session_id exists in db
         if is_logged_in:
@@ -103,7 +108,7 @@ async def get_search_history(session_id:str, user_id:str, is_logged_in:bool)->li
         result = query_to_dataframe(database="streamlit", query=validate_query)
         
         if result.empty or result.iloc[0]['count'] == 0:
-            logger.log(f"No records found for session_id: {session_id}", name=__name__)
+            logger.log(f"No records found for session_id: {session_id}", name=method_name)
             return []
         
         # Get search history
@@ -115,29 +120,21 @@ async def get_search_history(session_id:str, user_id:str, is_logged_in:bool)->li
         
         if df.empty:
             if is_logged_in:
-                logger.log(f"No search history found for user_id: {user_id}", name=__name__)
+                logger.log(f"No search history found for user_id: {user_id}", name=method_name)
             else:
-                logger.log(f"No search history found for session_id: {session_id}", name=__name__)
+                logger.log(f"No search history found for session_id: {session_id}", name=method_name)
             return []
         else:
             serialized_df = df.astype(object).to_dict(orient='records')
             return serialized_df
     except Exception as e:
-        logger.log(f"Exception occurred while retrieving search history: {e}", flag=1, name=__name__)
+        logger.log(f"Exception occurred while retrieving search history: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-
-@app.post("/test")
-def query_test(input:QueryCall):
-    try:
-        data = get_test_dataframe()
-        df = pd.DataFrame(data)
-        serialized_df = df.astype(object).to_dict(orient='records')
-        return serialized_df
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Exception occurred while querying as test: {e}")
 
 @app.post("/query")
 def query(input:QueryCall):
+    method_name = __name__ + ".query"
+    logger.log(f"api called", flag=0, name=method_name)
     try:
         df = query_to_dataframe(input.database, input.query)
         serialized_df = df.astype(object).to_dict(orient='records')
@@ -146,43 +143,55 @@ def query(input:QueryCall):
         raise HTTPException(status_code=500, detail=f"Exception occurred while querying from database: {e}")
 
 @app.post("/unique_values")
-def retrieve_unique_values(input:UniqueValuesCall):
+def retrieve_unique_values(input: UniqueValuesCall):
     method_name = __name__ + ".retrieve_unique_values"
+    logger.log(f"api called", flag=0, name=method_name)
     database = input.database
     table = input.table
     column = input.column
     is_stacked = input.is_stacked
-    seperator = -1
+    separator = -1
+
     try:
+        engine = create_db_engine(database)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
         if is_stacked:
-            seperator = 0
-            query = f"SELECT {column} FROM {table} WHERE {column} != '[]';"
-            result_df = query_to_dataframe(database=database, query=query)
+            separator = 0
+            # Handle stacked column data
+            model = get_model_from_table(table)
+            query = session.query(getattr(model, column)).filter(
+                getattr(model, column) != '[]',
+                getattr(model, column) != "['null']"
+            ).all()
             all_elems = []
-            seperator = 1
-            for row in result_df[column]:
+            separator = 1
+            for row in query:
                 try:
-                    col_elem_list = ast.literal_eval(row)  # 예외 처리 추가
+                    col_elem_list = ast.literal_eval(row[0])  # row is a tuple, so row[0] accesses the column data
                 except (SyntaxError, ValueError) as e:
                     logger.log(f"Error parsing row: {row}, error: {e}", flag=1, name=method_name)
-                    continue  # 오류가 발생한 경우 건너뜀
+                    continue  # Skip the erroneous row
                 all_elems.extend(col_elem_list)
             unique_stacked_elem_list = list(set(all_elems))
-            return {"unique_values":unique_stacked_elem_list}
+            return {"unique_values": unique_stacked_elem_list}
         else:
-            seperator = 2
-            query = f"SELECT DISTINCT {column} FROM {table};"
-            result_df = query_to_dataframe(database, query)
-            seperator = 3
-            unique_elem_list = result_df[column].unique().tolist()
-            return {"unique_values":unique_elem_list}
+            separator = 2
+            # Handle distinct values from a column
+            model = get_model_from_table(table)
+            query = session.query(getattr(model, column)).distinct().all()
+            separator = 3
+            unique_elem_list = list(set(row[0] for row in query))
+            return {"unique_values": unique_elem_list}
     except Exception as e:
-        logger.log(f"Exception occurred while retrieving unique values from table on seperator #{seperator}: {e}", flag=1, name=method_name)
-        raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving unique values from table:{e}")
+        logger.log(f"Exception occurred while retrieving unique values from table on separator #{separator}: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while retrieving unique values from table: {e}")
 
 @app.post("/columns")
 def get_columns(input:MetaDataCall):
     method_name = __name__ + ".get_columns"
+    logger.log(f"api called", flag=0, name=method_name)
     database = input.database
     table_name = input.table
     try:
@@ -198,6 +207,7 @@ def get_columns(input:MetaDataCall):
 @app.post("/row_count")
 def get_table_row_count(input:QueryCall):
     method_name = __name__ + ".get_table_row_count"
+    logger.log(f"api called", flag=0, name=method_name)
     try:
         database = input.database
         query = input.query
@@ -214,6 +224,7 @@ def get_table_row_count(input:QueryCall):
 @app.get("/stacked_columns")
 def get_stacked_columns(database:str, table:str):
     method_name = __name__ + ".get_stacked_columns"
+    logger.log(f"api called", flag=0, name=method_name)
     try:
         query = f"SELECT * FROM {table} LIMIT 100;"
         result_df = query_to_dataframe(database, query)
@@ -224,6 +235,94 @@ def get_stacked_columns(database:str, table:str):
     except Exception as e:
         logger.log(f"Exception occurred while getting stacked columns as list: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while getting stacked columns as list: {e}")
+
+@app.get("/dev_stacks")
+def get_dev_stacks(database:str):
+    method_name = __name__ + ".get_dev_stacks"
+    logger.log(f"api called", flag=0, name=method_name)
+    try:
+        query = """
+            SELECT T2.dev_stack FROM job_stack T1 INNER JOIN dev_stack T2 ON T1.did = T2.did
+        """
+        result_df = query_to_dataframe(database=database, query=query)
+        dev_stacks = result_df['dev_stack'].tolist()
+        return {"dev_stacks": dev_stacks}
+    except Exception as e:
+        logger.log(f"Exception occurred while getting dev stacks: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while getting dev stacks: {e}")
+
+@app.get("/search_keyword")
+def get_search_results(database: str, search_keyword: str)->list:
+    method_name = __name__ + ".get_search_result"
+    logger.log(f"api called", flag=0, name=method_name)
+    try:
+        engine = create_db_engine(database)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        if search_keyword:
+            # Define the common columns for all queries
+            columns = [JobInformation.pid, JobInformation.job_title, JobInformation.site_symbol,
+                       JobInformation.crawl_url, JobInformation.crawl_domain, JobInformation.company_name]
+            
+            # Create individual queries with the same columns
+            query1 = session.query(*columns).filter(
+                or_(
+                    JobInformation.job_title.like(f"%{search_keyword}%"),
+                    JobInformation.site_symbol.like(f"%{search_keyword}%"),
+                    JobInformation.crawl_url.like(f"%{search_keyword}%"),
+                    JobInformation.crawl_domain.like(f"%{search_keyword}%"),
+                    JobInformation.company_name.like(f"%{search_keyword}%"),
+                )
+            )
+            
+            query2 = session.query(JobInformation.pid, JobInformation.job_title, JobInformation.site_symbol,
+                                   JobInformation.crawl_url, JobInformation.crawl_domain, JobInformation.company_name).join(
+                JobStack
+            ).join(
+                DevStack
+            ).filter(
+                DevStack.dev_stack.like(f"%{search_keyword}%")
+            )
+
+            query3 = session.query(JobInformation.pid, JobInformation.job_title, JobInformation.site_symbol,
+                                   JobInformation.crawl_url, JobInformation.crawl_domain, JobInformation.company_name).join(
+                IncludeCategory
+            ).join(
+                Category
+            ).filter(
+                Category.job_category.like(f"%{search_keyword}%")
+            )
+
+            query4 = session.query(JobInformation.pid, JobInformation.job_title, JobInformation.site_symbol,
+                                   JobInformation.crawl_url, JobInformation.crawl_domain, JobInformation.company_name).join(
+                IndustryRelation
+            ).join(
+                Industry
+            ).filter(
+                Industry.industry_type.like(f"%{search_keyword}%")
+            )
+
+            # Combine queries using union
+            combined_query = query1.union(query2).union(query3).union(query4)
+        else:
+            # Select all columns if no search keyword is provided
+            combined_query = session.query(JobInformation.pid, JobInformation.job_title, JobInformation.site_symbol,
+                                           JobInformation.crawl_url, JobInformation.crawl_domain, JobInformation.company_name)
+
+        # Execute query and get results
+        result_proxy = combined_query.all()
+
+        # Convert results to DataFrame
+        df = pd.DataFrame(result_proxy, columns=['pid', 'job_title', 'site_symbol', 'crawl_url', 'crawl_domain', 'company_name'])
+        result_pid_list = df['pid'].to_list()
+        #serialized_df = df.astype(object).to_dict(orient='records')
+        #return serialized_df
+        return {"result":result_pid_list}
+    except Exception as e:
+        logger.log(f"Exception occurred while getting filter options: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while getting filter options: {e}")
+
 
 ### methods
 def load_config(config_path:str='config.json')->dict:
@@ -296,33 +395,19 @@ def query_to_dataframe(database:str, query:str)->pd.DataFrame:
     except Exception as e:
         logger.log(f"Exception occurred while querying: {e}", flag=1, name=method_name)
         raise e
-    
-def get_test_dataframe()->pd.DataFrame:
-    data = {
-        'job_title': ['Backend Software Engineer', 'Frontend Developer', 'Data Scientist', 'Full Stack Developer', 'DevOps Engineer', 'Mobile App Developer', 'UI/UX Designer', 'System Administrator', 'Cloud Architect', 'Security Specialist', 'Machine Learning Engineer', 'QA Engineer'],
-        'company_name': ['Quotabook', 'TechCorp', 'DataScience Inc.', 'Naver', 'Kakao', 'Line', 'Coupang', 'Baemin', 'Toss', 'Karrot', 'Wadiz', 'Zigbang'],
-        'country': ['South Korea', 'USA', 'UK', 'South Korea', 'South Korea', 'Japan', 'South Korea', 'South Korea', 'South Korea', 'South Korea', 'South Korea', 'South Korea'],
-        'salary': [None, '$120,000', '$95,000', '$110,000', '$130,000', '10,000,000 JPY', '$90,000', '$100,000', '$150,000', '$85,000', '$140,000', '$95,000'],
-        'remote': [False, True, True, False, True, False, True, False, True, True, False, True],
-        'job_category': ['Backend Engineer', 'Frontend Engineer', 'Data Science', 'Full Stack Development', 'DevOps', 'Mobile Development', 'Design', 'System Administration', 'Cloud Computing', 'Information Security', 'Artificial Intelligence', 'Quality Assurance'],
-        'stacks': [
-            "['Python', 'Django', 'Docker', 'AWS EKS', 'GitHub Actions', 'Node.js', 'TypeScript', 'ReactJS']",
-            "['JavaScript', 'ReactJS', 'Redux', 'CSS', 'HTML', 'Node.js']",
-            "['Python', 'Pandas', 'NumPy', 'TensorFlow', 'Keras', 'Docker']",
-            "['JavaScript', 'Python', 'React', 'Django', 'PostgreSQL', 'Redis']",
-            "['Kubernetes', 'Docker', 'Jenkins', 'Terraform', 'AWS', 'Prometheus']",
-            "['Swift', 'Kotlin', 'React Native', 'Firebase', 'GraphQL']",
-            "['Figma', 'Sketch', 'Adobe XD', 'InVision', 'Zeplin']",
-            "['Linux', 'Bash', 'Ansible', 'Nagios', 'VMware']",
-            "['AWS', 'Azure', 'GCP', 'Terraform', 'Kubernetes', 'Docker']",
-            "['Wireshark', 'Metasploit', 'Nmap', 'Burp Suite', 'Python']",
-            "['Python', 'TensorFlow', 'PyTorch', 'Scikit-learn', 'Keras']",
-            "['Selenium', 'JUnit', 'TestNG', 'Postman', 'Jenkins']"
-        ],
-        'required_career': [True, False, True, True, True, False, True, True, True, True, True, False],
-        'start_date': ['2023-07-01', '2023-07-02', '2023-07-03', '2023-07-04', '2023-07-05', '2023-07-06', '2023-07-07', '2023-07-08', '2023-07-09', '2023-07-10', '2023-07-11', '2023-07-12'],
-        'end_date': ['2023-08-01', '2023-08-02', '2023-08-03', '2023-08-04', '2023-08-05', '2023-08-06', '2023-08-07', '2023-08-08', '2023-08-09', '2023-08-10', '2023-08-11', '2023-08-12'],
-        'domain': ['Tech', 'Tech', 'Data Science', 'Tech', 'Tech', 'Mobile', 'Design', 'Infrastructure', 'Cloud', 'Security', 'AI', 'QA'],
-        'URL': ['http://example.com/job1', 'http://example.com/job2', 'http://example.com/job3', 'http://example.com/job4', 'http://example.com/job5', 'http://example.com/job6', 'http://example.com/job7', 'http://example.com/job8', 'http://example.com/job9', 'http://example.com/job10', 'http://example.com/job11', 'http://example.com/job12']
+
+def get_model_from_table(table_name: str):
+    # Map table names to ORM models
+    table_model_map = {
+        'job_information': JobInformation,
+        'industry_relation': IndustryRelation,
+        'industry': Industry,
+        'dev_stack': DevStack,
+        'job_stack': JobStack,
+        'category': Category,
+        'include_cartegory': IncludeCategory
     }
-    return data
+    if table_name in table_model_map:
+        return table_model_map[table_name]
+    else:
+        raise ValueError(f"Table {table_name} not found in model map.")
