@@ -18,18 +18,6 @@ logger = Logger()
 class QueryCall(BaseModel):
     database: str
     query : str
-    
-class SessionCall(BaseModel):
-    session_id: str
-    user_id: str
-    is_logged_in: bool
-
-class SearchHistory(BaseModel):
-    session_id: str
-    search_history: dict
-    timestamp: datetime
-    user_id: str
-    is_logged_in: bool
 
 class UniqueValuesCall(BaseModel):
     database:str
@@ -42,95 +30,6 @@ class MetaDataCall(BaseModel):
     table:str
 
 ### API calls
-@app.delete("/history")
-def clear_search_history(input:SessionCall):
-    method_name = __name__ + ".clear_search_history"
-    logger.log(f"api called", flag=0, name=method_name)
-    # connect to db, and clear search history of session_id
-    logger.log(f"clearing search history of session_id: {input.session_id}", name=__name__)
-    session_id = input.session_id
-    user_id = input.user_id
-    is_logged_in = input.is_logged_in
-    try:
-        if is_logged_in:
-            query = f"DELETE FROM search_history WHERE user_id = '{user_id}'"
-        else:
-            query = f"DELETE FROM search_history WHERE session_id = '{session_id}'"
-        if execute_query(database="streamlit", query=query):
-            return {"status": "success", "message": "Search history cleared successfully"}
-        else:
-            return {"status": "error", "message": "Failed to clear search history"}
-    except Exception as e:
-        logger.log(f"Exception occurred while clearing search history: {e}", flag=1, name=method_name)
-        return {"status": "error", "message": f"Exception occurred while clearing search history: {e}"}
-
-
-@app.post("/history")
-def save_search_history(input: SearchHistory):
-    method_name = __name__ + ".save_search_history"
-    logger.log(f"api called", flag=0, name=method_name)
-    try:
-        # Convert the search_history dict to a JSON string
-        search_history_json = json.dumps(input.search_history)
-        
-        ### DB ERD
-        # search_history (session_id, search_term, timestamp, user_id, is_logged_in)
-        query = """
-        INSERT INTO search_history (session_id, search_term, timestamp, is_logged_in, user_id) 
-        VALUES (:session_id, :search_term, :timestamp, :is_logged_in, :user_id)
-        """
-        params = {
-            "session_id": input.session_id,
-            "search_term": search_history_json,
-            "timestamp": input.timestamp,
-            "user_id": input.user_id,
-            "is_logged_in": input.is_logged_in
-        }
-        
-        if execute_query(database="streamlit", query=query, params=params):
-            return {"status": "success", "message": "Search history saved successfully"}
-        else:
-            return {"status": "error", "message": "Failed to save search history"}
-    except Exception as e:
-        logger.log(f"Exception occurred while saving search history: {e}", flag=1, name=method_name)
-        return {"status": "error", "message": f"Exception occurred while saving search history: {str(e)}"}
-
-@app.get("/history")
-async def get_search_history(session_id:str, user_id:str, is_logged_in:bool)->list:
-    method_name = __name__ + ".get_search_history"
-    logger.log(f"api called", flag=0, name=method_name)
-    try:
-        # Check if session_id exists in db
-        if is_logged_in:
-            validate_query = f"SELECT COUNT(*) as count FROM search_history WHERE user_id = '{user_id}' AND is_logged_in = TRUE"
-        else:
-            validate_query = f"SELECT COUNT(*) as count FROM search_history WHERE session_id = '{session_id}'"
-        result = query_to_dataframe(database="streamlit", query=validate_query)
-        
-        if result.empty or result.iloc[0]['count'] == 0:
-            logger.log(f"No records found for session_id: {session_id}", name=method_name)
-            return []
-        
-        # Get search history
-        if is_logged_in:
-            get_query = f"SELECT * FROM search_history WHERE user_id = '{user_id}'"
-        else:
-            get_query = f"SELECT * FROM search_history WHERE session_id = '{session_id}'"
-        df = query_to_dataframe(database="streamlit", query=get_query)
-        
-        if df.empty:
-            if is_logged_in:
-                logger.log(f"No search history found for user_id: {user_id}", name=method_name)
-            else:
-                logger.log(f"No search history found for session_id: {session_id}", name=method_name)
-            return []
-        else:
-            serialized_df = df.astype(object).to_dict(orient='records')
-            return serialized_df
-    except Exception as e:
-        logger.log(f"Exception occurred while retrieving search history: {e}", flag=1, name=method_name)
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-
 @app.post("/query")
 def query(input:QueryCall):
     method_name = __name__ + ".query"
@@ -252,7 +151,7 @@ def get_dev_stacks(database:str):
         raise HTTPException(status_code=500, detail=f"Exception occurred while getting dev stacks: {e}")
 
 @app.get("/search_keyword")
-def get_search_results(database: str, search_keyword: str)->list:
+def get_search_results(database: str, search_keyword: str):
     method_name = __name__ + ".get_search_result"
     logger.log(f"api called", flag=0, name=method_name)
     try:
@@ -320,8 +219,37 @@ def get_search_results(database: str, search_keyword: str)->list:
         #return serialized_df
         return {"result":result_pid_list}
     except Exception as e:
-        logger.log(f"Exception occurred while getting filter options: {e}", flag=1, name=method_name)
-        raise HTTPException(status_code=500, detail=f"Exception occurred while getting filter options: {e}")
+        logger.log(f"Exception occurred while getting search results: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while getting search results: {e}")
+
+@app.get("/job_information")
+def get_job_information(database: str, pid_list: str):
+    method_name = __name__ + ".get_job_information"
+    logger.log(f"api called", flag=0, name=method_name)
+    try:
+        pid_list = ast.literal_eval(pid_list)
+        engine = create_db_engine(database)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        result = {}
+
+        jobs = session.query(JobInformation).filter(JobInformation.pid.in_(pid_list)).all()
+
+        for job in jobs:
+            job_data = {
+                "job_title": job.job_title,
+                "company_name": job.company_name,
+                "dev_stacks": [stack.stack.dev_stack for stack in job.stacks],  # dev stack list
+                "required_career": job.required_career,
+                "start_date": job.start_date,
+                "end_date": job.end_date
+            }
+            result[job.pid] = job_data
+        return result
+
+    except Exception as e:
+        logger.log(f"Exception occurred while getting job information: {e}", flag=1, name=method_name)
+        raise HTTPException(status_code=500, detail=f"Exception occurred while getting job information: {e}")
 
 
 ### methods
