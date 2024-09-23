@@ -140,12 +140,16 @@ def get_dev_stacks(database:str):
     method_name = __name__ + ".get_dev_stacks"
     logger.log(f"api called", flag=0, name=method_name)
     try:
-        query = """
-            SELECT T2.dev_stack FROM job_stack T1 INNER JOIN dev_stack T2 ON T1.did = T2.did
-        """
-        result_df = query_to_dataframe(database=database, query=query)
-        dev_stacks = result_df['dev_stack'].tolist()
-        return {"dev_stacks": dev_stacks}
+        engine = create_db_engine(database)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        dev_stacks = (
+            session.query(DevStack.dev_stack)
+            .join(JobStack, JobStack.did == DevStack.did)
+            .all()
+        )
+        dev_stack_list = [stack[0] for stack in dev_stacks]
+        return {"dev_stacks": dev_stack_list}
     except Exception as e:
         logger.log(f"Exception occurred while getting dev stacks: {e}", flag=1, name=method_name)
         raise HTTPException(status_code=500, detail=f"Exception occurred while getting dev stacks: {e}")
