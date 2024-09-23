@@ -240,7 +240,9 @@ def get_job_information(database: str, pid_list: str):
                 "job_title": job.job_title,
                 "company_name": job.company_name,
                 "dev_stacks": [stack.stack.dev_stack for stack in job.stacks],  # dev stack list
+                "job_prefer": ast.literal_eval(job.job_prefer),
                 "required_career": job.required_career,
+                "resume_required": job.resume_required,
                 "start_date": job.start_date,
                 "end_date": job.end_date,
                 "crawl_url": job.crawl_url,
