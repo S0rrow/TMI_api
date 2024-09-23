@@ -2,7 +2,7 @@ import os, json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
-from sqlalchemy import create_engine, or_, text, MetaData, Table
+from sqlalchemy import create_engine, desc, or_, text, MetaData, Table
 from sqlalchemy.orm import sessionmaker
 from utils import Logger
 from datetime import datetime
@@ -233,7 +233,7 @@ def get_job_information(database: str, pid_list: str):
         session = Session()
         result = {}
 
-        jobs = session.query(JobInformation).filter(JobInformation.pid.in_(pid_list)).all()
+        jobs = session.query(JobInformation).filter(JobInformation.pid.in_(pid_list)).order_by(desc(JobInformation.get_date)).all()
 
         for job in jobs:
             job_data = {
@@ -242,7 +242,8 @@ def get_job_information(database: str, pid_list: str):
                 "dev_stacks": [stack.stack.dev_stack for stack in job.stacks],  # dev stack list
                 "required_career": job.required_career,
                 "start_date": job.start_date,
-                "end_date": job.end_date
+                "end_date": job.end_date,
+                "crawl_url": job.crawl_url
             }
             result[job.pid] = job_data
         return result
