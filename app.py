@@ -243,7 +243,8 @@ def get_job_information(database: str, pid_list: str):
                 "required_career": job.required_career,
                 "start_date": job.start_date,
                 "end_date": job.end_date,
-                "crawl_url": job.crawl_url
+                "crawl_url": job.crawl_url,
+                "get_date":job.get_date
             }
             result[job.pid] = job_data
         return result
